@@ -2,10 +2,19 @@ import { atom, read, update } from 'claude-code'
 import type { Register, ThemeSetArgs } from 'claude-code'
 
 import { makeColors } from './make-colors.js'
-import { buildSvg, CARD, DAYS_KEY, dayKey, EMPTY, PANE, textLines, TITLE } from './usage'
+import { detectLang, parseLang, t } from './i18n'
+import type { Lang } from './i18n'
+import { buildSvg, CARD, DAYS_KEY, dayKey, EMPTY, PANE, textLines } from './usage'
 
 // Stav panelu pro session; tag změnit, když se změní tvar Stats.
 const stats = atom({ plugin: 'cyan-night', key: 'stats' } as const, EMPTY, { shape: 'stats-1' })
+
+// Jazyk panelu: `auto` z CYAN_NIGHT_LANG / locale, `manual` z argumentu příkazu (jen pro session).
+const language = atom({ plugin: 'cyan-night', key: 'language' } as const, { auto: 'en', manual: null }, { shape: 'lang-1' })
+
+const currentLang = (l: { auto: Lang; manual: Lang | null }): Lang => l.manual ?? l.auto
+
+const envOrUndefined = (p: Promise<string | undefined>) => p.catch(() => undefined)
 
 // Grafitová noc s cyan akcenty — tmavé téma Cyan Night.
 const { theme, problems } = makeColors({
@@ -61,7 +70,7 @@ const SCENE = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" p
 </style>
 <rect width="1600" height="1000" fill="#0a0f14"/>
 ${grid()}
-<!-- výrazná cyan záře vlevo nahoře -->
+<!-- strong cyan glow, top left -->
 <circle cx="300" cy="250" r="260" fill="#00c8f0" fill-opacity="0.8"/>
 ${orb('o1', 260, 180, 520, 380, '#00c8f0', 0.45)}
 ${orb('o2', 1380, 820, 600, 420, '#0077b6', 0.42)}
@@ -91,7 +100,31 @@ export const register: Register = on => {
       $.ui.status(set.reason)
     }
 
-    // Panel Spotřeba Claude: dny ze všech sessions, první měření, příkaz a otevření.
+    // Jazyk: CYAN_NIGHT_LANG má přednost před locale systému (Intl, jazyk macOS, LC_ALL, LANG).
+    const override = await envOrUndefined($.env.get('CYAN_NIGHT_LANG'))
+    // Jazyk macOS (např. „cs_CZ"): Intl v pluginu vrací jen „en-US" a desktop nemá LANG.
+    let system: string | undefined
+    if (parseLang(override) === null) {
+      try {
+        const info = await $.session.info()
+        if (info.platform === 'macos' && info.isHosted !== true) {
+          const r = await $.process.run(['defaults', 'read', '-g', 'AppleLocale'], { timeoutMs: 2000 })
+          system = r.exitCode === 0 ? r.stdout.trim() : undefined
+        }
+      } catch {
+        system = undefined
+      }
+    }
+    const auto = detectLang({
+      override,
+      system,
+      lcAll: await envOrUndefined($.env.get('LC_ALL')),
+      lang: await envOrUndefined($.env.get('LANG')),
+    })
+    await update($, language, l => ({ ...l, auto }))
+    const L = t(currentLang(await read($, language)))
+
+    // Panel se spotřebou: dny ze všech sessions, první měření, příkaz a otevření.
     const saved = (await $.store.get(DAYS_KEY)) as Record<string, number> | undefined
     const u = await $.session.usage()
     await update($, stats, s => ({
@@ -101,17 +134,42 @@ export const register: Register = on => {
       limits: u.rateLimits.map(l => ({ kind: l.kind, percent: l.percentUsed, resetsAt: l.resetsAt ?? null })),
       costUsd: u.cost ? u.cost.usd : null,
     }))
-    await $.command.register({ name: 'spotreba', description: 'Otevře panel Spotřeba Claude' })
-    void $.ui.open({ id: PANE, title: TITLE })
+    await $.command.register({ name: 'spotreba', description: L.commandDescription, argumentHint: '[cs|en]' })
+    void $.ui.open({ id: PANE, title: L.title })
 
     return next(e)
   })
 
-  on('command.run', { command: 'spotreba' }, async $ => {
-    await $.ui.open({ id: PANE, title: TITLE })
+  // /spotreba [cs|en]: otevře panel; argument přepne jazyk pro tuto session.
+  on('command.run', { command: 'spotreba' }, async ($, e) => {
+    const arg = e.args.trim()
+    const manual = parseLang(arg)
+    if (manual !== null) {
+      await update($, language, l => ({ ...l, manual }))
+    }
+    const L = t(currentLang(await read($, language)))
+    await $.ui.open({ id: PANE, title: L.title })
 
-    return { text: 'Panel Spotřeba Claude je otevřený.' }
+    if (arg !== '' && manual === null) {
+      return { text: `${L.badArg(arg)} ${L.opened}` }
+    }
+
+    return { text: manual !== null ? L.openedLang : L.opened }
   })
+
+  // /usage je vestavěný příkaz Claude Code, jiný příkaz se jménem `usage` registrovat nejde.
+  // Alias proto obaluje vestavěný /usage: otevře panel (a /usage cs|en přepne jazyk),
+  // pak nechá proběhnout původní výpis, aby o něj nikdo nepřišel.
+  on('command.run', { command: 'usage' }, async ($, e, next) => {
+    const manual = parseLang(e.args)
+    if (manual !== null) {
+      await update($, language, l => ({ ...l, manual }))
+    }
+    const L = t(currentLang(await read($, language)))
+    await $.ui.open({ id: PANE, title: L.title }).catch(() => undefined)
+
+    return next(manual !== null ? { ...e, args: '' } : e)
+  }).catch(($, e, next) => next(e))
 
   on('prompt.submit', async ($, e, next) => {
     // Statistika nesmí nikdy zdržet ani zablokovat odeslání zprávy.
@@ -153,6 +211,7 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const s = await read($, stats)
+    const lang = currentLang(await read($, language))
     const now = new Date(await $.clock.now())
 
     if (e.surface === 'terminal') {
@@ -160,7 +219,7 @@ export const register: Register = on => {
 
       return (
         <Box flexDirection="column">
-          {textLines(s, now).map(line => (
+          {textLines(s, now, lang).map(line => (
             <Text>{line}</Text>
           ))}
         </Box>
@@ -170,8 +229,8 @@ export const register: Register = on => {
 
     return (
       <Svg
-        source={buildSvg(s, now)}
-        alt={textLines(s, now).join('. ')}
+        source={buildSvg(s, now, lang)}
+        alt={textLines(s, now, lang).join('. ')}
         width={CARD.width}
         height={CARD.height}
         isInteractive
@@ -179,12 +238,13 @@ export const register: Register = on => {
     )
   })
 
-  on('ui.render', { component: 'Backdrop' }, ($, e, next) => {
+  on('ui.render', { component: 'Backdrop' }, async ($, e, next) => {
     if ((e.surface !== 'desktop' && e.surface !== 'mobile') || e.props.scene !== 'cyan-night') {
       return next(e)
     }
     const { Svg } = $.ui.resolve(e)
+    const L = t(currentLang(await read($, language)))
 
-    return <Svg source={SCENE} alt="Tmavá scéna s pomalu plujícími zářemi a světelnými linkami" />
+    return <Svg source={SCENE} alt={L.backdropAlt} />
   })
 }

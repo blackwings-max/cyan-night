@@ -3,7 +3,7 @@
   "owner": {
     "name": "blackwings-max"
   },
-  "description": "Tmavé téma Cyan Night s panelem Spotřeba Claude pro Claude Code.",
+  "description": "Cyan Night dark theme with a Claude usage panel for Claude Code.",
   "plugins": [
     {
       "name": "cyan-night",

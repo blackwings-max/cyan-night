@@ -1,7 +1,11 @@
 {
   "name": "cyan-night",
-  "version": "0.2.0",
-  "description": "Tmavé téma s cyan akcenty, animovanou scénou za konverzací a panelem Spotřeba Claude.",
-  "author": { "name": "blackwings-max" },
-  "types": "./types/index.d.ts"
+  "version": "0.3.0",
+  "description": "Dark theme with cyan accents, an animated scene behind the conversation and a Claude usage panel (tokens, context, limits). English and Czech.",
+  "author": {
+    "name": "blackwings-max"
+  },
+  "types": "./types/index.d.ts",
+  "license": "MIT",
+  "homepage": "https://github.com/blackwings-max/cyan-night"
 }
