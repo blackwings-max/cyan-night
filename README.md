@@ -9,7 +9,7 @@ Mod pro Claude Code: tmavé grafitové téma s cyan akcenty, jemně animovaná s
 - **Panel Spotřeba Claude:** tokeny dnes a v této session (výstup, vstup, cache, počet dotazů), zaplnění kontextu, sloupce Po–Ne a limity účtu s časem obnovy. Otevře se při startu session, znovu příkazem `/spotreba`. V terminálu ukazuje stejné údaje textem.
 
 - **Jazyk:** panel mluví česky nebo anglicky podle jazyka systému (čeština a slovenština → česky, jinak anglicky). Přepneš ho proměnnou `CYAN_NIGHT_LANG=cs|en` nebo pro aktuální session příkazem `/spotreba en` či `/spotreba cs`.
-- **Alias `/usage`:** otevře stejný panel (i s přepnutím jazyka `/usage en`) a pak zobrazí i vestavěný výpis `/usage` z Claude Code.
+- **Alias `/usage`:** otevře stejný panel a pak zobrazí i vestavěný výpis `/usage` z Claude Code. Jazyk přepínej přes `/spotreba en`, protože desktopová aplikace u `/usage` argument nepustí.
 
 Odhad ceny v panelu je jen orientační, nejde o vyúčtování.
 
